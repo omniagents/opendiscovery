@@ -44,6 +44,7 @@ All endpoints are available under `/apis/`:
 
 - `POST /apis/publish` - Publish a network
   - Accepts a JSON with the network profile
+  - Checks for duplicate network_id (returns 409 Conflict if found)
   - Required fields in the network profile:
     - `network_id`: Unique identifier for the network
     - `name`: Network name
@@ -55,6 +56,11 @@ All endpoints are available under `/apis/`:
     - `authentication`: Authentication configuration
     - `installed_protocols`: List of protocol names installed on the network
     - `required_adapters`: List of adapter names required by the network
+  - Returns:
+    - `success`: Boolean indicating success
+    - `network_id`: The network ID
+    - `management_token`: A token required for heartbeat and unpublish operations
+    - `message`: Success message
   - Example:
     ```json
     {
@@ -82,10 +88,12 @@ All endpoints are available under `/apis/`:
     ```
 
 - `POST /apis/unpublish` - Unpublish a network
-  - Request body: `{"network_id": "network-12345678"}`
+  - Request body: `{"network_id": "network-12345678", "management_token": "token_received_during_publish"}`
+  - Requires the management token received during publish
 
 - `POST /apis/heartbeat` - Send a heartbeat for a network
-  - Request body: `{"network_id": "network-12345678", "num_agents": 5}`
+  - Request body: `{"network_id": "network-12345678", "num_agents": 5, "management_token": "token_received_during_publish"}`
+  - Requires the management token received during publish
 
 - `GET /apis/list_networks` - List all active networks
   - Returns networks that have sent a heartbeat in the last 15 minutes

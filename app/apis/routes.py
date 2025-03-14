@@ -78,6 +78,12 @@ def publish():
     - authentication: Authentication configuration
     - installed_protocols: List of protocol names installed on the network
     - required_adapters: List of adapter names required by the network
+    
+    Returns:
+    - success: Boolean indicating success
+    - network_id: The network ID
+    - management_token: A token required for heartbeat and unpublish operations
+    - message: Success message
     """
     try:
         # Try to parse JSON from request body
@@ -133,15 +139,37 @@ def publish():
                 'error': 'required_adapters must be a list of adapter names'
             }), 400
         
-        # Create a network data structure with just the profile
-        network_data = {'network_profile': network_profile}
+        # Check if a network with the same ID already exists
+        network_id = network_profile['network_id']
+        existing_network = get_network(network_id)
+        if existing_network:
+            return jsonify({
+                'success': False,
+                'error': f'A network with ID {network_id} already exists.'
+            }), 409  # Conflict
+        
+        # Generate a management token
+        import uuid
+        import hashlib
+        import time
+        
+        # Create a unique token based on network_id, current time, and a random UUID
+        token_base = f"{network_id}:{time.time()}:{uuid.uuid4().hex}"
+        management_token = hashlib.sha256(token_base.encode()).hexdigest()
+        
+        # Create a network data structure with the profile and management token
+        network_data = {
+            'network_profile': network_profile,
+            'management_token': management_token
+        }
         
         # Add network to storage
-        network_id = add_network(network_data)
+        add_network(network_data)
         
         return jsonify({
             'success': True,
             'network_id': network_id,
+            'management_token': management_token,
             'message': f'Network {network_id} published successfully.'
         })
     
@@ -164,25 +192,47 @@ def unpublish():
     
     Expected payload:
     {
-        "network_id": "network_name"
+        "network_id": "network_name",
+        "management_token": "token_received_during_publish"
     }
     """
     try:
         data = request.json
-        if not data or 'network_id' not in data:
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided.'
+            }), 400
+            
+        if 'network_id' not in data:
             return jsonify({
                 'success': False,
                 'error': 'network_id is required.'
             }), 400
+            
+        if 'management_token' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'management_token is required.'
+            }), 400
         
         network_id = data['network_id']
+        management_token = data['management_token']
         
         # Check if network exists
-        if not get_network(network_id):
+        network = get_network(network_id)
+        if not network:
             return jsonify({
                 'success': False,
                 'error': f'Network {network_id} not found.'
             }), 404
+        
+        # Verify management token
+        if network.get('management_token') != management_token:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid management token.'
+            }), 403  # Forbidden
         
         # Remove network from storage
         success = remove_network(network_id)
@@ -212,7 +262,8 @@ def heartbeat():
     Expected payload:
     {
         "network_id": "network_name",
-        "num_agents": 5
+        "num_agents": 5,
+        "management_token": "token_received_during_publish"
     }
     """
     try:
@@ -235,8 +286,30 @@ def heartbeat():
                 'error': 'num_agents is required.'
             }), 400
             
+        if 'management_token' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'management_token is required.'
+            }), 400
+            
         network_id = data['network_id']
         num_agents = data['num_agents']
+        management_token = data['management_token']
+        
+        # Check if network exists
+        network = get_network(network_id)
+        if not network:
+            return jsonify({
+                'success': False,
+                'error': f'Network {network_id} not found.'
+            }), 404
+        
+        # Verify management token
+        if network.get('management_token') != management_token:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid management token.'
+            }), 403  # Forbidden
         
         # Validate num_agents is a positive integer
         try:
