@@ -50,9 +50,9 @@ def get_network(network_id):
 
 def add_network(network_data):
     """Add or update a network."""
-    network_id = network_data.get('network_profile', {}).get('name')
+    network_id = network_data.get('network_profile', {}).get('network_id')
     if not network_id:
-        raise ValueError("Network must have a name in network_profile")
+        raise ValueError("Network must have a network_id in network_profile")
     
     with file_lock:
         # Add timestamp for heartbeat tracking
@@ -62,11 +62,12 @@ def add_network(network_data):
     
     return network_id
 
-def update_heartbeat(network_id):
-    """Update the heartbeat timestamp for a network."""
+def update_heartbeat(network_id, num_agents):
+    """Update the heartbeat timestamp and number of agents for a network."""
     with file_lock:
         if network_id in _networks:
             _networks[network_id]['last_heartbeat'] = time.time()
+            _networks[network_id]['num_agents'] = num_agents
             _save_networks()
             return True
         return False

@@ -31,6 +31,10 @@
         #publishForm {
             margin-bottom: 2rem;
         }
+        .required-field {
+            color: red;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -50,12 +54,8 @@
         <div class="tab-content" id="myTabContent">
             <div class="tab-pane fade show active" id="networks" role="tabpanel" aria-labelledby="networks-tab">
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h2>Available Networks</h2>
+                    <h2>Active Networks</h2>
                     <button class="btn btn-primary" id="refreshBtn">Refresh</button>
-                </div>
-                
-                <div class="mb-3">
-                    <input type="text" class="form-control" id="filterInput" placeholder="Filter by tag (comma separated)">
                 </div>
                 
                 <div id="networksList" class="row">
@@ -70,21 +70,61 @@
             <div class="tab-pane fade" id="publish" role="tabpanel" aria-labelledby="publish-tab">
                 <h2 class="mb-3">Publish a Network</h2>
                 
+                <div class="alert alert-info mb-3">
+                    <h5>Required Fields in Network Profile</h5>
+                    <p>Your network profile must include the following required fields:</p>
+                    <ul>
+                        <li><code>network_id</code>: Unique identifier for the network</li>
+                        <li><code>name</code>: Network name</li>
+                        <li><code>description</code>: Description of the network</li>
+                        <li><code>country</code>: Country where the network is hosted</li>
+                        <li><code>required_openagents_version</code>: Minimum version of OpenAgents required</li>
+                        <li><code>host</code>: Host address of the network</li>
+                        <li><code>port</code>: Port number of the network</li>
+                        <li><code>authentication</code>: Authentication configuration</li>
+                        <li><code>installed_protocols</code>: List of protocol names installed on the network</li>
+                        <li><code>required_adapters</code>: List of adapter names required by the network</li>
+                    </ul>
+                </div>
+                
                 <form id="publishForm">
                     <div class="mb-3">
-                        <label for="configFile" class="form-label">Network Configuration File (YAML or JSON)</label>
-                        <input class="form-control" type="file" id="configFile" accept=".yaml,.yml,.json">
-                    </div>
-                    
-                    <div class="mb-3">
-                        <label for="configText" class="form-label">Or paste configuration here:</label>
-                        <textarea class="form-control" id="configText" rows="10" placeholder="Paste YAML or JSON configuration here"></textarea>
+                        <label for="configText" class="form-label">Network Profile (JSON):</label>
+                        <textarea class="form-control" id="configText" rows="10" placeholder="Paste JSON network profile here"></textarea>
                     </div>
                     
                     <button type="submit" class="btn btn-primary">Publish Network</button>
                 </form>
                 
                 <div id="publishResult" class="mt-3" style="display: none;"></div>
+                
+                <div class="mt-4">
+                    <h5>Example Network Profile</h5>
+                    <pre class="bg-light p-3 rounded"><code>{
+  <span class="required-field">"network_id": "network-12345678",
+  "name": "ExampleNetwork",
+  "description": "Example network for testing",
+  "country": "Worldwide",
+  "required_openagents_version": "0.3.0",
+  "host": "127.0.0.1",
+  "port": 8765,
+  "authentication": {
+    "type": "none"
+  },
+  "installed_protocols": [
+    "openagents.protocols.communication.simple_messaging",
+    "openagents.protocols.discovery.network_discovery"
+  ],
+  "required_adapters": [
+    "openagents.protocols.communication.simple_messaging"
+  ],</span>
+  "tags": ["example", "test"],
+  "categories": ["example"],
+  "discoverable": true,
+  "icon": "https://example.com/icon.png",
+  "website": "https://example.com"
+}</code></pre>
+                </div>
             </div>
         </div>
     </div>
@@ -97,14 +137,12 @@
         // DOM elements
         const networksList = document.getElementById('networksList');
         const refreshBtn = document.getElementById('refreshBtn');
-        const filterInput = document.getElementById('filterInput');
         const publishForm = document.getElementById('publishForm');
-        const configFile = document.getElementById('configFile');
         const configText = document.getElementById('configText');
         const publishResult = document.getElementById('publishResult');
         
         // Load networks
-        async function loadNetworks(filterTags = '') {
+        async function loadNetworks() {
             networksList.innerHTML = `
                 <div class="col-12 text-center py-5">
                     <div class="spinner-border" role="status">
@@ -114,14 +152,7 @@
             `;
             
             try {
-                let url = `${API_BASE}/list_networks`;
-                
-                if (filterTags) {
-                    const tags = filterTags.split(',').map(tag => tag.trim());
-                    url += `?filter=${encodeURIComponent(JSON.stringify({ tags }))}`;
-                }
-                
-                const response = await fetch(url);
+                const response = await fetch(`${API_BASE}/list_networks`);
                 const data = await response.json();
                 
                 if (data.success) {
@@ -137,7 +168,7 @@
         // Display networks
         function displayNetworks(networks) {
             if (networks.length === 0) {
-                networksList.innerHTML = `<div class="col-12 text-center py-5">No networks found</div>`;
+                networksList.innerHTML = `<div class="col-12 text-center py-5">No active networks found</div>`;
                 return;
             }
             
@@ -145,6 +176,8 @@
             
             networks.forEach(network => {
                 const profile = network.network_profile || {};
+                const lastHeartbeat = network.last_heartbeat_time || 'Unknown';
+                const numAgents = network.num_agents || 0;
                 
                 html += `
                     <div class="col-md-6 col-lg-4 mb-4">
@@ -157,11 +190,16 @@
                                     ${(profile.tags || []).map(tag => `<span class="tag">${tag}</span>`).join('')}
                                 </div>
                                 
-                                <div class="d-flex justify-content-between align-items-center mt-3">
-                                    <small class="text-muted">Capacity: ${profile.capacity || 'Unknown'}</small>
+                                <div class="mt-3">
+                                    <small class="text-muted d-block">Network ID: ${profile.network_id}</small>
+                                    <small class="text-muted d-block">Last heartbeat: ${lastHeartbeat}</small>
+                                    <small class="text-muted d-block">Active agents: ${numAgents}</small>
+                                </div>
+                                
+                                <div class="d-flex justify-content-end mt-3">
                                     <div class="network-actions">
-                                        <button class="btn btn-sm btn-outline-primary heartbeat-btn" data-network="${profile.name}">Heartbeat</button>
-                                        <button class="btn btn-sm btn-outline-danger unpublish-btn" data-network="${profile.name}">Unpublish</button>
+                                        <button class="btn btn-sm btn-outline-primary heartbeat-btn" data-network="${profile.network_id}">Heartbeat</button>
+                                        <button class="btn btn-sm btn-outline-danger unpublish-btn" data-network="${profile.network_id}">Unpublish</button>
                                     </div>
                                 </div>
                             </div>
@@ -187,6 +225,20 @@
             const networkId = event.target.dataset.network;
             const btn = event.target;
             
+            // Prompt for number of agents
+            const numAgents = prompt("Enter the current number of agents in the network:", "1");
+            if (numAgents === null) {
+                // User cancelled the prompt
+                return;
+            }
+            
+            // Validate input
+            const parsedNumAgents = parseInt(numAgents);
+            if (isNaN(parsedNumAgents) || parsedNumAgents < 0) {
+                alert("Please enter a valid positive number for agents.");
+                return;
+            }
+            
             btn.disabled = true;
             btn.innerHTML = 'Sending...';
             
@@ -196,7 +248,10 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ network_id: networkId })
+                    body: JSON.stringify({ 
+                        network_id: networkId,
+                        num_agents: parsedNumAgents
+                    })
                 });
                 
                 const data = await response.json();
@@ -246,7 +301,7 @@
                 
                 if (data.success) {
                     alert(`Network ${networkId} unpublished successfully.`);
-                    loadNetworks(filterInput.value);
+                    loadNetworks();
                 } else {
                     alert(`Error: ${data.error}`);
                 }
@@ -262,17 +317,21 @@
             let formData;
             let contentType;
             
-            if (configFile.files.length > 0) {
-                // Use file upload
-                formData = new FormData();
-                formData.append('config', configFile.files[0]);
-                contentType = null; // Let the browser set it
-            } else if (configText.value.trim()) {
+            if (configText.value.trim()) {
                 // Use text input
-                formData = configText.value.trim();
-                contentType = 'application/json';
+                try {
+                    // Try to parse as JSON
+                    const profileData = JSON.parse(configText.value.trim());
+                    
+                    // Send the profile directly
+                    formData = JSON.stringify(profileData);
+                    contentType = 'application/json';
+                } catch (error) {
+                    alert('Invalid JSON format. Please check your input.');
+                    return;
+                }
             } else {
-                alert('Please provide a configuration file or paste configuration text.');
+                alert('Please provide a network profile.');
                 return;
             }
             
@@ -307,12 +366,7 @@
         }
         
         // Event listeners
-        refreshBtn.addEventListener('click', () => loadNetworks(filterInput.value));
-        filterInput.addEventListener('keyup', event => {
-            if (event.key === 'Enter') {
-                loadNetworks(filterInput.value);
-            }
-        });
+        refreshBtn.addEventListener('click', loadNetworks);
         publishForm.addEventListener('submit', publishNetwork);
         
         // Initial load

@@ -32,6 +32,7 @@ service_agents:
 
 network_profile:
   discoverable: true
+  network_id: "network-12345678"
   name: "ExampleNetwork"
   description: "Example network for testing"
   icon: "https://example.com/icon.png"
@@ -49,4 +50,9 @@ network_profile:
   authentication:
     type: "none"
   host: "127.0.0.1"
-  port: 8765 
+  port: 8765
+  installed_protocols:
+    - "openagents.protocols.communication.simple_messaging"
+    - "openagents.protocols.discovery.network_discovery"
+  required_adapters:
+    - "openagents.protocols.communication.simple_messaging" 

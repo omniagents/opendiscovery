@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, render_template
 import yaml
 import json
 from app.utils.storage import (
@@ -8,8 +8,56 @@ from app.utils.storage import (
     update_heartbeat,
     remove_network
 )
+import time
+from datetime import datetime
 
 api_bp = Blueprint('api', __name__)
+
+@api_bp.route('/', methods=['GET'])
+def homepage():
+    """
+    Render the homepage with a list of active networks.
+    """
+    try:
+        # Get all networks
+        networks = get_networks()
+        
+        # Filter to only include active networks (heartbeat in last 15 minutes)
+        current_time = time.time()
+        active_networks = {}
+        for network_id, network_data in networks.items():
+            last_heartbeat = network_data.get('last_heartbeat', 0)
+            # Check if heartbeat was within the last 15 minutes (900 seconds)
+            if current_time - last_heartbeat <= 900:
+                active_networks[network_id] = network_data
+        
+        # Format networks for the template
+        formatted_networks = []
+        for network_id, network_data in active_networks.items():
+            profile = network_data.get('network_profile', {})
+            
+            # Convert timestamp to human-readable format
+            last_heartbeat = network_data.get('last_heartbeat', 0)
+            last_heartbeat_time = datetime.fromtimestamp(last_heartbeat).strftime('%Y-%m-%d %H:%M:%S')
+            
+            formatted_networks.append({
+                'network_id': network_id,
+                'name': profile.get('name', 'Unnamed Network'),
+                'description': profile.get('description', 'No description'),
+                'country': profile.get('country', 'Unknown'),
+                'host': profile.get('host', 'Unknown'),
+                'port': profile.get('port', 'Unknown'),
+                'num_agents': network_data.get('num_agents', 0),
+                'last_heartbeat': last_heartbeat_time,
+                'tags': profile.get('tags', []),
+                'installed_protocols': profile.get('installed_protocols', []),
+                'required_adapters': profile.get('required_adapters', [])
+            })
+        
+        return render_template('homepage.html', networks=formatted_networks)
+    
+    except Exception as e:
+        return f"Error loading networks: {str(e)}", 500
 
 @api_bp.route('/publish', methods=['POST'])
 def publish():
@@ -17,40 +65,76 @@ def publish():
     Publish a network to the discovery service.
     
     Expected payload:
-    - YAML or JSON configuration of the network
+    - JSON with the network profile
+    
+    Required network profile fields:
+    - name: Network name
+    - network_id: Unique identifier for the network
+    - description: Description of the network
+    - country: Country where the network is hosted
+    - required_openagents_version: Minimum version of OpenAgents required
+    - host: Host address of the network
+    - port: Port number of the network
+    - authentication: Authentication configuration
+    - installed_protocols: List of protocol names installed on the network
+    - required_adapters: List of adapter names required by the network
     """
     try:
-        # Check if the request has the file part
-        if 'config' in request.files:
-            file = request.files['config']
-            content = file.read().decode('utf-8')
-            
-            # Parse YAML or JSON
-            try:
-                network_data = yaml.safe_load(content)
-            except yaml.YAMLError:
-                try:
-                    network_data = json.loads(content)
-                except json.JSONDecodeError:
-                    return jsonify({
-                        'success': False,
-                        'error': 'Invalid file format. Must be YAML or JSON.'
-                    }), 400
-        else:
-            # Try to parse JSON from request body
-            network_data = request.json
-            if not network_data:
-                return jsonify({
-                    'success': False,
-                    'error': 'No network configuration provided.'
-                }), 400
-        
-        # Validate network data
-        if not network_data.get('network_profile'):
+        # Try to parse JSON from request body
+        data = request.json
+        if not data:
             return jsonify({
                 'success': False,
-                'error': 'Network configuration must include a network_profile.'
+                'error': 'No data provided.'
             }), 400
+        
+        # Get the network profile directly from the request
+        network_profile = data
+        
+        # Validate network profile
+        if not network_profile:
+            return jsonify({
+                'success': False,
+                'error': 'Network profile is required.'
+            }), 400
+        
+        # Validate required fields in network_profile
+        required_fields = [
+            'name', 
+            'network_id', 
+            'description', 
+            'country', 
+            'required_openagents_version', 
+            'host', 
+            'port', 
+            'authentication',
+            'installed_protocols',
+            'required_adapters'
+        ]
+        
+        missing_fields = [field for field in required_fields if field not in network_profile]
+        
+        if missing_fields:
+            return jsonify({
+                'success': False,
+                'error': f'Missing required fields in network profile: {", ".join(missing_fields)}'
+            }), 400
+        
+        # Validate that installed_protocols and required_adapters are lists
+        if not isinstance(network_profile.get('installed_protocols'), list):
+            return jsonify({
+                'success': False,
+                'error': 'installed_protocols must be a list of protocol names'
+            }), 400
+            
+        if not isinstance(network_profile.get('required_adapters'), list):
+            return jsonify({
+                'success': False,
+                'error': 'required_adapters must be a list of adapter names'
+            }), 400
+        
+        # Create a network data structure with just the profile
+        network_data = {'network_profile': network_profile}
         
         # Add network to storage
         network_id = add_network(network_data)
@@ -127,26 +211,54 @@ def heartbeat():
     
     Expected payload:
     {
-        "network_id": "network_name"
+        "network_id": "network_name",
+        "num_agents": 5
     }
     """
     try:
         data = request.json
-        if not data or 'network_id' not in data:
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No data provided.'
+            }), 400
+            
+        if 'network_id' not in data:
             return jsonify({
                 'success': False,
                 'error': 'network_id is required.'
             }), 400
-        
+            
+        if 'num_agents' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'num_agents is required.'
+            }), 400
+            
         network_id = data['network_id']
+        num_agents = data['num_agents']
+        
+        # Validate num_agents is a positive integer
+        try:
+            num_agents = int(num_agents)
+            if num_agents < 0:
+                return jsonify({
+                    'success': False,
+                    'error': 'num_agents must be a positive integer.'
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'num_agents must be a valid integer.'
+            }), 400
         
         # Update heartbeat
-        success = update_heartbeat(network_id)
+        success = update_heartbeat(network_id, num_agents)
         
         if success:
             return jsonify({
                 'success': True,
-                'message': f'Heartbeat received for network {network_id}.'
+                'message': f'Heartbeat received for network {network_id} with {num_agents} agents.'
             })
         else:
             return jsonify({
@@ -165,59 +277,31 @@ def list_networks():
     """
     List all active networks.
     
-    Query parameters:
-    - filter: Optional JSON string with filter criteria
+    A network is considered active if it sent a heartbeat in the last 15 minutes.
     """
     try:
         # Get all networks
         networks = get_networks()
         
-        # Apply filters if provided
-        filter_str = request.args.get('filter')
-        if filter_str:
-            try:
-                filters = json.loads(filter_str)
-                
-                # Filter networks based on criteria
-                filtered_networks = {}
-                for network_id, network_data in networks.items():
-                    match = True
-                    
-                    # Check network profile fields
-                    profile = network_data.get('network_profile', {})
-                    for key, value in filters.items():
-                        if key == 'tags' and 'tags' in profile:
-                            # Special handling for tags (check if any tag matches)
-                            if not any(tag in profile['tags'] for tag in value):
-                                match = False
-                                break
-                        elif key == 'categories' and 'categories' in profile:
-                            # Special handling for categories
-                            if not any(cat in profile['categories'] for cat in value):
-                                match = False
-                                break
-                        elif key in profile and profile[key] != value:
-                            match = False
-                            break
-                    
-                    if match:
-                        filtered_networks[network_id] = network_data
-                
-                networks = filtered_networks
-            
-            except json.JSONDecodeError:
-                return jsonify({
-                    'success': False,
-                    'error': 'Invalid filter format. Must be valid JSON.'
-                }), 400
+        # Filter to only include active networks (heartbeat in last 15 minutes)
+        current_time = time.time()
+        active_networks = {}
+        for network_id, network_data in networks.items():
+            last_heartbeat = network_data.get('last_heartbeat', 0)
+            # Check if heartbeat was within the last 15 minutes (900 seconds)
+            if current_time - last_heartbeat <= 900:
+                active_networks[network_id] = network_data
         
         # Format response
         result = []
-        for network_id, network_data in networks.items():
-            # Remove internal fields
+        for network_id, network_data in active_networks.items():
+            # Create a copy of the network data
             network_copy = network_data.copy()
-            if 'last_heartbeat' in network_copy:
-                del network_copy['last_heartbeat']
+            
+            # Convert timestamp to human-readable format
+            last_heartbeat = network_copy.get('last_heartbeat', 0)
+            last_heartbeat_time = datetime.fromtimestamp(last_heartbeat).strftime('%Y-%m-%d %H:%M:%S')
+            network_copy['last_heartbeat_time'] = last_heartbeat_time
             
             result.append(network_copy)
         

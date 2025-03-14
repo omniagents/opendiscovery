@@ -18,10 +18,8 @@ def create_app():
     from app.apis.routes import api_bp
     app.register_blueprint(api_bp, url_prefix='/apis')
     
-    # Serve static files
-    @app.route('/')
-    def index():
-        return send_from_directory('static', 'index.html')
+    # Also register the blueprint at the root level for the homepage with a unique name
+    app.register_blueprint(api_bp, name='root_api')
     
     # Initialize scheduler for cleanup tasks
     scheduler = BackgroundScheduler()
