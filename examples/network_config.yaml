@@ -1,0 +1,52 @@
+# OpenAgents Network Configuration Example
+
+# Network configuration
+network:
+  name: "ExampleNetwork"
+  protocols:
+    - name: "openagents.protocols.communication.simple_messaging"
+      enabled: true
+      config: {}
+
+# Service agents configuration
+service_agents:
+  - name: "Agent1"
+    adapters:
+      - name: "openagents.protocols.communication.simple_messaging"
+        enabled: true
+        config: {}
+    services:
+      - name: "echo"
+        description: "Echo service that returns the input"
+    subscriptions:
+      - "general"
+
+  - name: "Agent2"
+    adapters:
+      - name: "openagents.protocols.communication.simple_messaging"
+        enabled: true
+        config: {}
+    services: []
+    subscriptions:
+      - "general"
+
+network_profile:
+  discoverable: true
+  name: "ExampleNetwork"
+  description: "Example network for testing"
+  icon: "https://example.com/icon.png"
+  website: "https://example.com"
+  tags:
+    - "example"
+    - "test"
+    - "network"
+  categories:
+    - "example"
+    - "test"
+  country: "Worldwide"
+  required_openagents_version: "0.3.0"
+  capacity: 5000
+  authentication:
+    type: "none"
+  host: "127.0.0.1"
+  port: 8765 
