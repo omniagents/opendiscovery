@@ -142,20 +142,31 @@ def publish():
         # Check if a network with the same ID already exists
         network_id = network_profile['network_id']
         existing_network = get_network(network_id)
+        
+        # Check for management code in the request
+        management_code = network_profile.get('management_code')
+        
         if existing_network:
-            return jsonify({
-                'success': False,
-                'error': f'A network with ID {network_id} already exists.'
-            }), 409  # Conflict
-        
-        # Generate a management token
-        import uuid
-        import hashlib
-        import time
-        
-        # Create a unique token based on network_id, current time, and a random UUID
-        token_base = f"{network_id}:{time.time()}:{uuid.uuid4().hex}"
-        management_token = hashlib.sha256(token_base.encode()).hexdigest()
+            # If a management code is provided, check if it matches the stored token
+            if management_code and management_code == existing_network.get('management_token'):
+                # Management code matches, allow re-publishing
+                # Keep the existing management token
+                management_token = existing_network.get('management_token')
+            else:
+                # No management code or it doesn't match
+                return jsonify({
+                    'success': False,
+                    'error': f'A network with ID {network_id} already exists.'
+                }), 409  # Conflict
+        else:
+            # Network doesn't exist, generate a new management token
+            import uuid
+            import hashlib
+            import time
+            
+            # Create a unique token based on network_id, current time, and a random UUID
+            token_base = f"{network_id}:{time.time()}:{uuid.uuid4().hex}"
+            management_token = hashlib.sha256(token_base.encode()).hexdigest()
         
         # Create a network data structure with the profile and management token
         network_data = {

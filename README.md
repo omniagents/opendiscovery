@@ -45,6 +45,9 @@ All endpoints are available under `/apis/`:
 - `POST /apis/publish` - Publish a network
   - Accepts a JSON with the network profile
   - Checks for duplicate network_id (returns 409 Conflict if found)
+  - Optional field `management_code` can be provided to re-publish a network with the same ID
+    - If the management code matches the stored management token, the network will be updated
+    - This allows recovery from errors or re-publishing after a crash
   - Required fields in the network profile:
     - `network_id`: Unique identifier for the network
     - `name`: Network name
